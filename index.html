@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Alumasa Controle do Almoxarifado</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'alumasa-blue': '#00529C',
+              'alumasa-deep-blue': '#0a2540',
+              'alumasa-light-blue': '#0073E6',
+              'alumasa-gray': '#F5F5F5',
+              'alumasa-dark-gray': '#333333',
+            },
+          },
+        },
+      }
+    </script>
+    <style>
+      .toast {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        border-radius: 8px;
+        color: #fff;
+        font-weight: 500;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        z-index: 9999;
+        opacity: 0;
+        visibility: hidden;
+        transform: translate(100%, 0);
+        transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+      }
+      .toast.show {
+        opacity: 1;
+        visibility: visible;
+        transform: translate(0, 0);
+      }
+      .toast.success {
+        background-color: #10B981; /* emerald-500 */
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-router-dom": "https://aistudiocdn.com/react-router-dom@^7.9.6",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0"
+  }
+}
+</script>
+</head>
+  <body class="bg-alumasa-gray">
+    <div id="root"></div>
+  </body>
+</html>

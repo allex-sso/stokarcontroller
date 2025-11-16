@@ -1,0 +1,5 @@
+{
+  "name": "Alumasa Almoxarifado",
+  "description": "A clone of the Alumasa warehouse management application, built with React and Tailwind CSS. This application provides a user interface for managing inventory items such as tools, PPE, office supplies, and uniforms, as well as tracking requisitions.",
+  "requestFramePermissions": []
+}
