@@ -2,8 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { mockTopConsumed, mockCategoryDistribution } from '../constants';
-import { TopConsumedItem, CategoryDistribution, StockItem, ItemHistory } from '../types';
+import { CategoryDistribution, StockItem, ItemHistory } from '../types';
 
 interface DashboardCardProps {
   title: React.ReactNode;
@@ -82,13 +81,51 @@ const Painel: React.FC<PainelProps> = ({ stockItems, historyData }) => {
 
     return { totalEntradas, totalSaidas, topConsumed: finalTopConsumed };
   }, [stockItems, historyData, startDate, endDate]);
+  
+  const categoryDistribution: CategoryDistribution[] = useMemo(() => {
+    if (!stockItems || stockItems.length === 0) return [];
+
+    const categoryMap = new Map<string, { value: number, items: number }>();
+    const totalValue = stockItems.reduce((acc, item) => acc + (item.system_stock * item.value), 0);
+
+    stockItems.forEach(item => {
+        const category = item.category || 'Sem Categoria';
+        const itemValue = item.system_stock * item.value;
+        const current = categoryMap.get(category) || { value: 0, items: 0 };
+        current.value += itemValue;
+        current.items += 1;
+        categoryMap.set(category, current);
+    });
+    
+    if (totalValue === 0) {
+        return Array.from(categoryMap.entries()).map(([name, data]) => ({
+            name,
+            value: 0,
+            items: data.items,
+            color: '#cccccc' // a default color
+        }));
+    }
+
+    const COLORS = ['#34D399', '#FBBF24', '#60A5FA', '#F87171', '#A78BFA', '#F472B6', '#38BDF8', '#818CF8', '#FCD34D', '#A3E635'];
+
+    return Array.from(categoryMap.entries())
+        .map(([name, data], index) => ({
+            name,
+            value: parseFloat(((data.value / totalValue) * 100).toFixed(1)),
+            items: data.items,
+            color: COLORS[index % COLORS.length]
+        }))
+        .sort((a, b) => b.value - a.value);
+
+}, [stockItems]);
+
 
   const { totalEntradas, totalSaidas, topConsumed } = filteredData;
-  const displayTopConsumed = topConsumed.length > 0 ? topConsumed : mockTopConsumed;
+  const displayTopConsumed = topConsumed
 
   const maxBarValue = Math.max(...displayTopConsumed.map(item => item.value), 1);
-  const itemsAbaixoMinimo = stockItems.filter(i => i.systemStock <= i.minStock).length;
-  const totalValue = stockItems.reduce((acc, item) => acc + (item.systemStock * item.value), 0);
+  const itemsAbaixoMinimo = stockItems.filter(i => i.system_stock <= i.min_stock).length;
+  const totalValue = stockItems.reduce((acc, item) => acc + (item.system_stock * item.value), 0);
 
   const icons = {
     estoque: <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-1.414 1.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-1.414-1.414A1 1 0 006.586 13H4" /></svg>,
@@ -181,8 +218,8 @@ const Painel: React.FC<PainelProps> = ({ stockItems, historyData }) => {
         <div className="bg-white p-6 rounded-lg shadow-md xl:col-span-3">
           <h2 className="text-lg font-semibold text-gray-700 mb-4">Top 7 Itens Consumidos (Valor)</h2>
           <div className="space-y-4">
-            {displayTopConsumed.map((item: TopConsumedItem) => (
-              <div key={item.name} className="relative group">
+            {displayTopConsumed.map((item, index) => (
+              <div key={`${item.name}-${index}`} className="relative group">
                 <div className="flex items-center">
                     <p className="w-24 text-sm text-gray-600 shrink-0">{item.name}</p>
                     <div className="flex-1 bg-gray-200 rounded-full h-5">
@@ -208,34 +245,41 @@ const Painel: React.FC<PainelProps> = ({ stockItems, historyData }) => {
         </div>
         
         <div className="bg-white p-6 rounded-lg shadow-md xl:col-span-2">
-          <h2 className="text-lg font-semibold text-gray-700 mb-4">Itens por Categoria</h2>
-          <div className="flex items-center justify-center space-x-8">
-            <div className="relative w-40 h-40">
-                <svg viewBox="0 0 36 36" className="transform -rotate-90">
-                    {(() => {
-                        let accumulated = 0;
-                        return mockCategoryDistribution.map((cat: CategoryDistribution) => {
-                            const dasharray = `${cat.value} ${100 - cat.value}`;
-                            const dashoffset = -accumulated;
-                            accumulated += cat.value;
-                            return (
-                                <circle key={cat.name} cx="18" cy="18" r="15.9155" fill="transparent" stroke={cat.color} strokeWidth="3.8" strokeDasharray={dasharray} strokeDashoffset={dashoffset}>
-                                    <title>{`${cat.name}: ${cat.value}% (${cat.items} ${cat.items === 1 ? 'item' : 'itens'})`}</title>
-                                </circle>
-                            )
-                        })
-                    })()}
-                </svg>
+          <h2 className="text-lg font-semibold text-gray-700 mb-4">Itens por Categoria (Valor)</h2>
+          {categoryDistribution.length > 0 ? (
+            <div className="flex items-center justify-center space-x-8">
+              <div className="relative w-40 h-40">
+                  <svg viewBox="0 0 36 36" className="transform -rotate-90">
+                      {(() => {
+                          let accumulated = 0;
+                          return categoryDistribution.map((cat: CategoryDistribution) => {
+                              if (cat.value === 0) return null;
+                              const dasharray = `${cat.value} ${100 - cat.value}`;
+                              const dashoffset = -accumulated;
+                              accumulated += cat.value;
+                              return (
+                                  <circle key={cat.name} cx="18" cy="18" r="15.9155" fill="transparent" stroke={cat.color} strokeWidth="3.8" strokeDasharray={dasharray} strokeDashoffset={dashoffset}>
+                                      <title>{`${cat.name}: ${cat.value}% (${cat.items} ${cat.items === 1 ? 'item' : 'itens'})`}</title>
+                                  </circle>
+                              )
+                          })
+                      })()}
+                  </svg>
+              </div>
+              <div className="text-sm space-y-2">
+                  {categoryDistribution.slice(0, 7).map((cat: CategoryDistribution) => (
+                      <div key={cat.name} className="flex items-center">
+                          <span className="w-3 h-3 rounded-full mr-2" style={{backgroundColor: cat.color}}></span>
+                          <span>{cat.name} {cat.value}%</span>
+                      </div>
+                  ))}
+              </div>
             </div>
-            <div className="text-sm space-y-2">
-                {mockCategoryDistribution.map((cat: CategoryDistribution) => (
-                    <div key={cat.name} className="flex items-center">
-                        <span className="w-3 h-3 rounded-full mr-2" style={{backgroundColor: cat.color}}></span>
-                        <span>{cat.name} {cat.value}%</span>
-                    </div>
-                ))}
-            </div>
-          </div>
+             ) : (
+                <div className="text-center text-gray-500 py-8">
+                    Nenhum item em estoque para exibir as categorias.
+                </div>
+            )}
         </div>
       </div>
     </div>

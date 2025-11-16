@@ -1,25 +1,32 @@
 
 import React, { useState } from 'react';
+import { supabase } from '../supabaseClient';
 
-interface LoginProps {
-  onLogin: () => void;
-}
+interface LoginProps {}
 
-const Login: React.FC<LoginProps> = ({ onLogin }) => {
-  const [email, setEmail] = useState('admin@alumasa.com');
-  const [password, setPassword] = useState('admin');
+const Login: React.FC<LoginProps> = () => {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email === 'admin@alumasa.com' && password === 'admin') {
-      setError('');
-      onLogin();
-    } else {
-      setError('Credenciais inválidas. Tente novamente.');
-    }
+    setLoading(true);
+    setError('');
+    
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password,
+    });
+
+    if (error) {
+      setError(error.message);
+    } 
+    // The onAuthStateChange listener in App.tsx will handle the login state update.
+    setLoading(false);
   };
 
   const EyeIcon = () => (
@@ -91,10 +98,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               </button>
             </div>
             <button
-              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline w-full transition duration-300"
+              className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:shadow-outline w-full transition duration-300 flex items-center justify-center"
               type="submit"
+              disabled={loading}
             >
-              Entrar
+              {loading ? 'Entrando...' : 'Entrar'}
             </button>
           </form>
         </div>
@@ -104,7 +112,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
                 <h3 className="text-lg font-bold text-gray-800">Recuperação de Senha</h3>
-                <p className="text-gray-600 my-4">Para redefinir sua senha, entre em contato com o administrador do sistema.</p>
+                <p className="text-gray-600 my-4">Para redefinir sua senha, utilize a função "Esqueci minha senha" do Supabase ou contate o administrador.</p>
                 <div className="flex justify-end">
                     <button onClick={() => setShowForgotPasswordModal(false)} className="py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700">Fechar</button>
                 </div>

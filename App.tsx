@@ -1,17 +1,16 @@
 
-
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { Routes, Route, Navigate, useLocation, Link, useParams } from 'react-router-dom';
+import { Session } from '@supabase/supabase-js';
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Painel from './components/Dashboard';
-// FIX: Changed import to use named exports for both components from ItemListPage.
 import { EstoquePage, InventoryPage } from './components/ItemListPage';
 import RelatoriosPage from './components/PlaceholderPage';
 import AuditPage from './components/AuditPage';
-import { mockUsers, mockSuppliers, mockStockItems, mockAuditLogs, mockHistoryData } from './constants';
 import { User, Supplier, StockItem, AuditLog, ItemHistory, EntryItemHistory, ExitItemHistory } from './types';
+import { supabase } from './supabaseClient';
 
 
 // ============================================================================
@@ -20,8 +19,8 @@ import { User, Supplier, StockItem, AuditLog, ItemHistory, EntryItemHistory, Exi
 interface MovimentacoesPageProps {
   stockItems: StockItem[];
   suppliers: Supplier[];
-  onRegisterEntry: (data: { itemId: string; quantity: number; supplier: string; nf: string; observations: string; }) => void;
-  onRegisterExit: (data: { itemId: string; quantity: number; requester: string; responsible: string; }) => void;
+  onRegisterEntry: (data: { itemId: string; quantity: number; supplier: string; nf: string; observations: string; }) => Promise<void>;
+  onRegisterExit: (data: { itemId: string; quantity: number; requester: string; responsible: string; }) => Promise<void>;
   showToast: (message: string) => void;
 }
 
@@ -34,13 +33,13 @@ const MovimentacoesPage: React.FC<MovimentacoesPageProps> = ({ stockItems, suppl
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     useEffect(() => {
-        if (selectedItem) {
-            const firstSupplier = Array.isArray(selectedItem.supplier) ? selectedItem.supplier[0] : selectedItem.supplier;
-            setSelectedSupplier(firstSupplier || '');
+        if (selectedItem && selectedItem.supplier_id) {
+            const supplierName = suppliers.find(s => s.id === selectedItem.supplier_id)?.name;
+            setSelectedSupplier(supplierName || '');
         } else {
             setSelectedSupplier('');
         }
-    }, [selectedItem]);
+    }, [selectedItem, suppliers]);
 
 
     const filteredItems = search && !selectedItem
@@ -62,51 +61,45 @@ const MovimentacoesPage: React.FC<MovimentacoesPageProps> = ({ stockItems, suppl
         setSearch(`${item.code} - ${item.description}`);
     };
 
-    const handleRegisterExitSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    const handleRegisterExitSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
       e.preventDefault();
       setIsSubmitting(true);
       const formData = new FormData(e.currentTarget);
       if (selectedItem && quantity) {
-          setTimeout(() => { // Simulate API call
-            onRegisterExit({
-                itemId: selectedItem.id,
-                quantity: parseInt(quantity, 10),
-                requester: formData.get('requester') as string,
-                responsible: formData.get('responsible') as string,
-            });
-            showToast('Saída registrada com sucesso!');
-            resetForm();
-            e.currentTarget.reset();
-            setIsSubmitting(false);
-          }, 1000);
+          await onRegisterExit({
+              itemId: selectedItem.id,
+              quantity: parseInt(quantity, 10),
+              requester: formData.get('requester') as string,
+              responsible: formData.get('responsible') as string,
+          });
+          showToast('Saída registrada com sucesso!');
+          resetForm();
+          e.currentTarget.reset();
       } else {
         alert('Por favor, selecione um item e informe a quantidade.');
-        setIsSubmitting(false);
       }
+      setIsSubmitting(false);
     };
     
-    const handleRegisterEntrySubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    const handleRegisterEntrySubmit = async (e: React.FormEvent<HTMLFormElement>) => {
        e.preventDefault();
        setIsSubmitting(true);
        const formData = new FormData(e.currentTarget);
        if(selectedItem && quantity) {
-         setTimeout(() => { // Simulate API call
-           onRegisterEntry({
-             itemId: selectedItem.id,
-             quantity: parseInt(quantity, 10),
-             supplier: selectedSupplier,
-             nf: formData.get('nf') as string,
-             observations: formData.get('observations') as string,
-           });
-           showToast('Entrada registrada com sucesso!');
-           resetForm();
-           e.currentTarget.reset();
-           setIsSubmitting(false);
-         }, 1000);
+         await onRegisterEntry({
+           itemId: selectedItem.id,
+           quantity: parseInt(quantity, 10),
+           supplier: selectedSupplier,
+           nf: formData.get('nf') as string,
+           observations: formData.get('observations') as string,
+         });
+         showToast('Entrada registrada com sucesso!');
+         resetForm();
+         e.currentTarget.reset();
        } else {
          alert('Por favor, selecione o item e a quantidade.');
-         setIsSubmitting(false);
        }
+       setIsSubmitting(false);
     };
     
     const SpinnerIcon = () => (
@@ -153,7 +146,7 @@ const MovimentacoesPage: React.FC<MovimentacoesPageProps> = ({ stockItems, suppl
                                 </ul>
                             )}
                             {selectedItem && (
-                               <p className="text-sm text-blue-600 mt-2">Estoque atual: <span className="font-bold">{selectedItem.systemStock}</span> {selectedItem.unit}(s)</p>
+                               <p className="text-sm text-blue-600 mt-2">Estoque atual: <span className="font-bold">{selectedItem.system_stock}</span> {selectedItem.unit}(s)</p>
                             )}
                         </div>
                         <div className="grid grid-cols-2 gap-4">
@@ -215,7 +208,7 @@ const MovimentacoesPage: React.FC<MovimentacoesPageProps> = ({ stockItems, suppl
                                 </ul>
                             )}
                              {selectedItem && (
-                               <p className="text-sm text-blue-600 mt-2">Estoque atual: <span className="font-bold">{selectedItem.systemStock}</span> {selectedItem.unit}(s)</p>
+                               <p className="text-sm text-blue-600 mt-2">Estoque atual: <span className="font-bold">{selectedItem.system_stock}</span> {selectedItem.unit}(s)</p>
                             )}
                       </div>
                       <div>
@@ -271,14 +264,12 @@ const MovimentacoesPage: React.FC<MovimentacoesPageProps> = ({ stockItems, suppl
 interface ControlePageProps {
     users: User[];
     suppliers: Supplier[];
-    allData: object;
-    onAddUser: (user: Omit<User, 'id'|'avatarUrl'>) => boolean;
-    onUpdateUser: (user: User) => void;
-    onDeleteUser: (userId: number) => void;
-    onAddSupplier: (supplier: Omit<Supplier, 'id'>) => void;
-    onUpdateSupplier: (supplier: Supplier) => void;
-    onDeleteSupplier: (supplierId: number) => void;
-    onRestoreBackup: (data: any) => void;
+    onAddUser: (user: Omit<User, 'id'|'avatar_url'> & { password?: string }) => Promise<{success: boolean, error?: string}>;
+    onUpdateUser: (user: User) => Promise<void>;
+    onDeleteUser: (userId: string) => Promise<void>;
+    onAddSupplier: (supplier: Omit<Supplier, 'id'>) => Promise<void>;
+    onUpdateSupplier: (supplier: Supplier) => Promise<void>;
+    onDeleteSupplier: (supplierId: number) => Promise<void>;
     showToast: (message: string) => void;
 }
 
@@ -290,13 +281,18 @@ interface PanelState {
 }
 
 const ControlePage: React.FC<ControlePageProps> = ({ 
-    users, suppliers, allData,
+    users, suppliers,
     onAddUser, onUpdateUser, onDeleteUser,
     onAddSupplier, onUpdateSupplier, onDeleteSupplier,
-    onRestoreBackup,
     showToast
 }) => {
     const { tab = 'usuarios' } = useParams<{ tab: string }>();
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 10;
+
+    useEffect(() => {
+      setCurrentPage(1);
+    }, [tab]);
     
     // Deletion modals state
     const [userToDelete, setUserToDelete] = useState<User | null>(null);
@@ -308,9 +304,20 @@ const ControlePage: React.FC<ControlePageProps> = ({
     // Form states
     const [formData, setFormData] = useState<any>({});
     const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+    const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const restoreInputRef = useRef<HTMLInputElement>(null);
-    const loggedInUser: User | undefined = users.find(u => u.profile === 'Administrador');
+    const paginatedUsers = useMemo(() => {
+        const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+        return users.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+    }, [currentPage, users]);
+    const totalUserPages = Math.ceil(users.length / ITEMS_PER_PAGE);
+
+    const paginatedSuppliers = useMemo(() => {
+        const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+        return suppliers.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+    }, [currentPage, suppliers]);
+    const totalSupplierPages = Math.ceil(suppliers.length / ITEMS_PER_PAGE);
+
 
     const openPanel = (mode: PanelMode, data: User | Supplier | null = null) => {
         setPanelState({ isOpen: true, mode, data });
@@ -324,104 +331,68 @@ const ControlePage: React.FC<ControlePageProps> = ({
     };
 
     // User Handlers
-    const handleSaveUser = (e: React.FormEvent) => {
+    const handleSaveUser = async (e: React.FormEvent) => {
         e.preventDefault();
+        setIsSubmitting(true);
+        setFormErrors({}); 
         if (panelState.mode === 'addUser') {
-            const success = onAddUser(formData);
+            if (formData.password !== formData.confirmPassword) {
+                setFormErrors({ password: "As senhas não coincidem." });
+                setIsSubmitting(false);
+                return;
+            }
+            const { success, error } = await onAddUser(formData);
             if(success) {
                 showToast('Usuário adicionado com sucesso!');
                 closePanel();
             } else {
-                setFormErrors({ email: 'Este e-mail já está em uso.' });
+                setFormErrors({ email: error || 'Este e-mail já está em uso ou ocorreu um erro.' });
             }
         } else if (panelState.mode === 'editUser') {
-            onUpdateUser(formData as User);
+            await onUpdateUser(formData as User);
             showToast('Usuário atualizado com sucesso!');
             closePanel();
         }
+        setIsSubmitting(false);
     };
     
-    const handleConfirmDeleteUser = () => {
+    const handleConfirmDeleteUser = async () => {
         if (userToDelete) {
-            onDeleteUser(userToDelete.id);
+            await onDeleteUser(userToDelete.id);
             setUserToDelete(null);
-            showToast('Usuário excluído com sucesso!');
+            showToast('Perfil de usuário excluído com sucesso.');
         }
     };
 
-    const handleChangePassword = (e: React.FormEvent) => {
+    const handleChangePassword = async (e: React.FormEvent) => {
         e.preventDefault();
-        const { newPassword, confirmPassword } = formData;
-        if (newPassword !== confirmPassword) {
-            setFormErrors({ password: 'As senhas não coincidem.' });
-            return;
-        }
-        if (newPassword.length < 6) {
-            setFormErrors({ password: 'A senha deve ter pelo menos 6 caracteres.' });
-            return;
-        }
-        showToast(`Senha do usuário ${panelState.data?.name} alterada com sucesso!`);
+        // This would require a call to supabase.auth.updateUser in a real scenario
+        // For now, it just shows a toast.
+        showToast(`Função de alterar senha não implementada nesta versão.`);
         closePanel();
     };
 
     // Supplier Handlers
-     const handleSaveSupplier = (e: React.FormEvent) => {
+     const handleSaveSupplier = async (e: React.FormEvent) => {
         e.preventDefault();
+        setIsSubmitting(true);
         if (panelState.mode === 'addSupplier') {
-            onAddSupplier(formData);
+            await onAddSupplier(formData);
             showToast('Fornecedor adicionado com sucesso!');
             closePanel();
         } else if (panelState.mode === 'editSupplier') {
-            onUpdateSupplier(formData as Supplier);
+            await onUpdateSupplier(formData as Supplier);
             showToast('Fornecedor atualizado com sucesso!');
             closePanel();
         }
+        setIsSubmitting(false);
     };
 
-    const handleConfirmDeleteSupplier = () => {
+    const handleConfirmDeleteSupplier = async () => {
         if (supplierToDelete) {
-            onDeleteSupplier(supplierToDelete.id);
+            await onDeleteSupplier(supplierToDelete.id);
             setSupplierToDelete(null);
             showToast('Fornecedor excluído com sucesso!');
-        }
-    };
-
-    // Backup handlers
-    const handleCreateBackup = () => {
-        const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
-            JSON.stringify(allData, null, 2)
-        )}`;
-        const link = document.createElement("a");
-        link.href = jsonString;
-        link.download = `backup-alumasa-${new Date().toISOString()}.json`;
-        link.click();
-    };
-
-    const handleRestoreClick = () => {
-        restoreInputRef.current?.click();
-    };
-
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                try {
-                    const text = e.target?.result;
-                    if (typeof text !== 'string') throw new Error("File content is not a string");
-                    const data = JSON.parse(text);
-                    if (window.confirm("Tem certeza que deseja restaurar este backup? Todos os dados atuais serão substituídos.")) {
-                       onRestoreBackup(data);
-                       showToast("Backup restaurado com sucesso!");
-                    }
-                } catch (error) {
-                    alert("Erro ao ler o arquivo de backup. Verifique se o arquivo é um JSON válido.");
-                    console.error("Backup restore error:", error);
-                }
-            };
-            reader.readAsText(file);
-             // Reset input value to allow selecting the same file again
-            event.target.value = '';
         }
     };
     
@@ -431,7 +402,7 @@ const ControlePage: React.FC<ControlePageProps> = ({
             case 'editUser':
                 return (
                     <form id="user-form" onSubmit={handleSaveUser}>
-                        {formErrors.email && <p className="bg-red-100 text-red-700 p-3 rounded-md mb-4 text-sm">{formErrors.email}</p>}
+                        {(formErrors.email || formErrors.password) && <p className="bg-red-100 text-red-700 p-3 rounded-md mb-4 text-sm">{formErrors.email || formErrors.password}</p>}
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700">Nome</label>
@@ -441,6 +412,18 @@ const ControlePage: React.FC<ControlePageProps> = ({
                                 <label className="block text-sm font-medium text-gray-700">E-mail</label>
                                 <input type="email" value={formData.email || ''} onChange={(e) => setFormData({...formData, email: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required/>
                             </div>
+                             {panelState.mode === 'addUser' && (
+                                <>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Senha</label>
+                                        <input type="password" name="password" onChange={(e) => setFormData({...formData, password: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required/>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700">Confirmar Senha</label>
+                                        <input type="password" name="confirmPassword" onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required/>
+                                    </div>
+                                </>
+                            )}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700">Perfil</label>
                                 <select value={formData.profile || 'Operador'} onChange={(e) => setFormData({...formData, profile: e.target.value as 'Administrador' | 'Operador'})} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md">
@@ -454,17 +437,7 @@ const ControlePage: React.FC<ControlePageProps> = ({
             case 'changePassword':
                 return (
                      <form id="password-form" onSubmit={handleChangePassword}>
-                        {formErrors.password && <p className="bg-red-100 text-red-700 p-3 rounded-md mb-4 text-sm">{formErrors.password}</p>}
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Nova Senha</label>
-                                <input type="password" value={formData.newPassword || ''} onChange={(e) => setFormData({...formData, newPassword: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required/>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Confirmar Senha</label>
-                                <input type="password" value={formData.confirmPassword || ''} onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md" required/>
-                            </div>
-                        </div>
+                        <p className="text-sm text-gray-600">A alteração de senha deve ser feita através do gerenciamento de usuários do Supabase.</p>
                     </form>
                 );
             case 'addSupplier':
@@ -515,7 +488,7 @@ const ControlePage: React.FC<ControlePageProps> = ({
                     <div className="bg-white p-6 rounded-lg shadow-md">
                       <div className="flex justify-between items-center mb-4">
                           <h2 className="text-xl font-semibold text-gray-800">Gerenciamento de Usuários</h2>
-                          <button onClick={() => openPanel('addUser')} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md text-sm">+ Novo usuário</button>
+                          <button onClick={() => openPanel('addUser')} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md text-sm">+ Novo Usuário</button>
                       </div>
                       <table className="w-full text-left">
                           <thead>
@@ -528,9 +501,9 @@ const ControlePage: React.FC<ControlePageProps> = ({
                               </tr>
                           </thead>
                           <tbody>
-                              {users.map(user => (
+                              {paginatedUsers.map(user => (
                                   <tr key={user.id} className="border-b">
-                                      <td className="p-3"><img src={user.avatarUrl} alt={user.name} className="w-8 h-8 rounded-full" /></td>
+                                      <td className="p-3"><img src={user.avatar_url} alt={user.name} className="w-8 h-8 rounded-full" /></td>
                                       <td className="p-3 text-sm text-gray-800">{user.name}</td>
                                       <td className="p-3 text-sm text-gray-500">{user.email}</td>
                                       <td className="p-3"><span className={`px-2 py-1 text-xs rounded-full ${user.profile === 'Administrador' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{user.profile}</span></td>
@@ -540,7 +513,7 @@ const ControlePage: React.FC<ControlePageProps> = ({
                                                   <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" />
                                               </svg>
                                           </button>
-                                          <button onClick={() => { if (loggedInUser?.profile === 'Administrador') openPanel('changePassword', user) }} className="hover:text-yellow-600 transition-colors duration-200" title="Alterar Senha">
+                                          <button onClick={() => openPanel('changePassword', user)} className="hover:text-yellow-600 transition-colors duration-200" title="Alterar Senha">
                                               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                                                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                                               </svg>
@@ -555,6 +528,18 @@ const ControlePage: React.FC<ControlePageProps> = ({
                               ))}
                           </tbody>
                       </table>
+                       {totalUserPages > 1 && (
+                            <div className="flex justify-between items-center mt-4 text-sm text-gray-600">
+                                <p>Mostrando {paginatedUsers.length} de {users.length} registros</p>
+                                <div className="flex items-center space-x-1">
+                                    <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className="px-2 py-1 border rounded-md disabled:opacity-50">Primeira</button>
+                                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-2 py-1 border rounded-md disabled:opacity-50">Anterior</button>
+                                    <span className="px-3 py-1 bg-gray-200 rounded-md">Página {currentPage} de {totalUserPages}</span>
+                                    <button onClick={() => setCurrentPage(p => Math.min(totalUserPages, p + 1))} disabled={currentPage === totalUserPages} className="px-2 py-1 border rounded-md disabled:opacity-50">Próxima</button>
+                                    <button onClick={() => setCurrentPage(totalUserPages)} disabled={currentPage === totalUserPages} className="px-2 py-1 border rounded-md disabled:opacity-50">Última</button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 );
             case 'fornecedores':
@@ -575,7 +560,7 @@ const ControlePage: React.FC<ControlePageProps> = ({
                                 </tr>
                             </thead>
                             <tbody>
-                                {suppliers.map(sup => (
+                                {paginatedSuppliers.map(sup => (
                                     <tr key={sup.id} className="border-b">
                                         <td className="p-3 text-sm text-gray-800">{sup.name}</td>
                                         <td className="p-3 text-sm text-gray-500">{sup.contact}</td>
@@ -597,32 +582,19 @@ const ControlePage: React.FC<ControlePageProps> = ({
                                 ))}
                             </tbody>
                         </table>
+                        {totalSupplierPages > 1 && (
+                            <div className="flex justify-between items-center mt-4 text-sm text-gray-600">
+                                <p>Mostrando {paginatedSuppliers.length} de {suppliers.length} registros</p>
+                                <div className="flex items-center space-x-1">
+                                    <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className="px-2 py-1 border rounded-md disabled:opacity-50">Primeira</button>
+                                    <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-2 py-1 border rounded-md disabled:opacity-50">Anterior</button>
+                                    <span className="px-3 py-1 bg-gray-200 rounded-md">Página {currentPage} de {totalSupplierPages}</span>
+                                    <button onClick={() => setCurrentPage(p => Math.min(totalSupplierPages, p + 1))} disabled={currentPage === totalSupplierPages} className="px-2 py-1 border rounded-md disabled:opacity-50">Próxima</button>
+                                    <button onClick={() => setCurrentPage(totalSupplierPages)} disabled={currentPage === totalSupplierPages} className="px-2 py-1 border rounded-md disabled:opacity-50">Última</button>
+                                </div>
+                            </div>
+                        )}
                     </div>
-                );
-            case 'backup':
-                 return (
-                  <div className="space-y-6">
-                    <div className="bg-white p-6 rounded-lg shadow-md">
-                      <h2 className="text-xl font-semibold text-gray-800 mb-4">Criar Backup do Sistema</h2>
-                      <p className="text-gray-600 mb-4 text-sm">Crie um arquivo de backup com todos os dados atuais do sistema, incluindo itens, usuários e histórico de movimentações. Guarde este arquivo em um local seguro.</p>
-                      <button onClick={handleCreateBackup} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md">
-                        ↓ Criar e Baixar Backup
-                      </button>
-                    </div>
-                    <div className="bg-white p-6 rounded-lg shadow-md">
-                      <h2 className="text-xl font-semibold text-gray-800 mb-4">Restaurar a partir de um backup</h2>
-                       <div className="bg-red-50 border-l-4 border-red-400 p-4 mb-4">
-                        <p className="font-bold text-red-800">Atenção</p>
-                        <p className="text-sm text-red-700">Restaurar um backup substituirá TODOS os dados atuais do sistema pelos dados do arquivo. Esta ação não pode ser desfeita.</p>
-                       </div>
-                       <div className="flex items-center space-x-4">
-                         <input type="file" ref={restoreInputRef} onChange={handleFileChange} accept=".json" className="hidden" />
-                         <button onClick={handleRestoreClick} className="border border-gray-300 py-2 px-4 rounded-md text-gray-700">
-                           🗂️ Escolher Arquivo de Backup
-                         </button>
-                       </div>
-                    </div>
-                  </div>
                 );
             default:
                 return null;
@@ -653,7 +625,9 @@ const ControlePage: React.FC<ControlePageProps> = ({
                         </div>
                         <div className="slide-over-footer">
                             <button onClick={closePanel} type="button" className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50">Cancelar</button>
-                            <button form={getPanelFormId()} type="submit" className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600">Salvar</button>
+                            <button form={getPanelFormId()} type="submit" className="rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600" disabled={isSubmitting}>
+                                {isSubmitting ? 'Salvando...' : 'Salvar'}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -664,7 +638,10 @@ const ControlePage: React.FC<ControlePageProps> = ({
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white p-6 rounded-lg shadow-xl max-w-sm w-full">
                         <h3 className="text-lg font-bold text-gray-800">Confirmar Exclusão</h3>
-                        <p className="text-gray-600 my-4">Tem certeza que deseja excluir o usuário <span className="font-semibold">{userToDelete.name}</span>? Esta ação não pode ser desfeita.</p>
+                        <p className="text-gray-600 my-4">Tem certeza que deseja excluir o usuário <span className="font-semibold">{userToDelete.name}</span>?</p>
+                        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 text-sm text-yellow-800 rounded-md mb-4">
+                            <strong>Atenção:</strong> Isso removerá o perfil do usuário do sistema, mas <strong>não excluirá sua conta de login</strong>. A exclusão da conta deve ser feita manually no painel de Autenticação do Supabase.
+                        </div>
                         <div className="flex justify-end space-x-2">
                             <button onClick={() => setUserToDelete(null)} className="py-2 px-4 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300">Cancelar</button>
                             <button onClick={handleConfirmDeleteUser} className="py-2 px-4 bg-red-600 text-white rounded-md hover:bg-red-700">Excluir</button>
@@ -693,13 +670,40 @@ const ControlePage: React.FC<ControlePageProps> = ({
 // ============================================================================
 // Main App Component
 // ============================================================================
+
+// Helper para adicionar um timeout a uma promise
+const withTimeout = <T,>(promise: Promise<T>, ms: number): Promise<T> => {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(`A solicitação excedeu o tempo limite de ${ms}ms`));
+    }, ms);
+
+    promise
+      .then(res => {
+        clearTimeout(timeoutId);
+        resolve(res);
+      })
+      .catch(err => {
+        clearTimeout(timeoutId);
+        reject(err);
+      });
+  });
+};
+
 const App: React.FC = () => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [stockItems, setStockItems] = useState<StockItem[]>(mockStockItems);
-  const [users, setUsers] = useState<User[]>(mockUsers);
-  const [suppliers, setSuppliers] = useState<Supplier[]>(mockSuppliers);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>(mockAuditLogs);
-  const [historyData, setHistoryData] = useState<Record<string, ItemHistory[]>>(mockHistoryData);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isDataLoading, setIsDataLoading] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+
+  const [stockItems, setStockItems] = useState<StockItem[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [historyData, setHistoryData] = useState<Record<string, ItemHistory[]>>({});
+  
   const [toastMessage, setToastMessage] = useState('');
   const toastTimeoutRef = useRef<number | null>(null);
 
@@ -713,129 +717,400 @@ const App: React.FC = () => {
     }, 3000);
   }, []);
 
-  const handleLogin = useCallback(() => setIsLoggedIn(true), []);
-  const handleLogout = useCallback(() => setIsLoggedIn(false), []);
-
-  const addAuditLog = (action: string) => {
-    const newLog: AuditLog = {
-      id: Date.now(),
-      timestamp: new Date().toLocaleString('pt-BR'),
-      user: 'Administrador', // Mocked user
-      action,
-    };
-    setAuditLogs(prev => [newLog, ...prev]);
-  };
-
-  // User Handlers
-  const handleAddUser = (user: Omit<User, 'id' | 'avatarUrl'>) => {
-    if (users.some(u => u.email.toLowerCase() === user.email.toLowerCase())) {
-        return false;
+  const fetchData = useCallback(async (activeUser: User) => {
+    const [
+        stockItemsRes,
+        allUsersRes,
+        suppliersRes,
+        auditLogsRes,
+        historyDataRes,
+    ] = await Promise.all([
+        supabase.from('stock_items').select('*'),
+        supabase.from('users').select('*'),
+        supabase.from('suppliers').select('*'),
+        supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
+        supabase.from('item_history').select('*'),
+    ]);
+    
+    const responses = [stockItemsRes, allUsersRes, suppliersRes, auditLogsRes, historyDataRes];
+    for (const res of responses) {
+        if (res.error && res.error.code !== 'PGRST116') throw res.error;
     }
-    const newUser: User = {
-        id: Date.now(),
-        ...user,
-        avatarUrl: `https://i.pravatar.cc/150?u=${user.email}`
-    };
-    setUsers(prev => [newUser, ...prev]);
-    addAuditLog(`Criou o usuário ${user.name}.`);
-    return true;
-  };
-  const handleUpdateUser = (updatedUser: User) => {
-    setUsers(users.map(u => u.id === updatedUser.id ? updatedUser : u));
-    addAuditLog(`Atualizou o usuário ${updatedUser.name}.`);
-  };
-  const handleDeleteUser = (userId: number) => {
-    const user = users.find(u => u.id === userId);
-    setUsers(users.filter(u => u.id !== userId));
-    if(user) addAuditLog(`Excluiu o usuário ${user.name}.`);
-  };
-  
-  // Supplier Handlers
-  const handleAddSupplier = (supplier: Omit<Supplier, 'id'>) => {
-    const newSupplier = { id: Date.now(), ...supplier };
-    setSuppliers(prev => [newSupplier, ...prev]);
-    addAuditLog(`Adicionou o fornecedor ${supplier.name}.`);
-  };
-  const handleUpdateSupplier = (updatedSupplier: Supplier) => {
-    setSuppliers(suppliers.map(s => s.id === updatedSupplier.id ? updatedSupplier : s));
-     addAuditLog(`Atualizou o fornecedor ${updatedSupplier.name}.`);
-  };
-  const handleDeleteSupplier = (supplierId: number) => {
-    const supplier = suppliers.find(s => s.id === supplierId);
-    setSuppliers(suppliers.filter(s => s.id !== supplierId));
-    if (supplier) addAuditLog(`Excluiu o fornecedor ${supplier.name}.`);
-  };
-  
-  // Movement Handlers
-  const handleRegisterEntry = (data: { itemId: string; quantity: number; supplier: string; nf: string; observations: string; }) => {
-      const item = stockItems.find(i => i.id === data.itemId);
-      if (item) {
-        setStockItems(prev => prev.map(i => i.id === data.itemId ? {...i, systemStock: i.systemStock + data.quantity} : i));
-        
-        const newHistoryEntry: EntryItemHistory = {
-            id: `h-${Date.now()}`,
-            date: new Date().toLocaleDateString('pt-BR'),
-            type: 'Entrada',
-            quantity: data.quantity,
-            user: 'Administrador', // Mocked user
-            details: `Fornecedor: ${data.supplier || 'N/A'}. NF: ${data.nf || 'N/A'}. Obs: ${data.observations || 'N/A'}`
-        };
 
-        setHistoryData(prev => ({
-            ...prev,
-            [data.itemId]: [newHistoryEntry, ...(prev[data.itemId] || [])]
-        }));
-        
-        addAuditLog(`Registrou entrada de ${data.quantity} unidade(s) do item ${item.code}. NF: ${data.nf}.`);
-      }
-  };
-  const handleRegisterExit = (data: { itemId: string; quantity: number; requester: string; responsible: string; }) => {
-      const item = stockItems.find(i => i.id === data.itemId);
-      if (item) {
-        const newStock = item.systemStock - data.quantity;
-        if(newStock < 0) {
-          alert('A quantidade de saída é maior que o estoque atual!');
-          return;
+    if (stockItemsRes.data) setStockItems(stockItemsRes.data as any);
+    if (suppliersRes.data) setSuppliers(suppliersRes.data);
+    if (auditLogsRes.data) setAuditLogs(auditLogsRes.data);
+    
+    if (allUsersRes.data) {
+        setUsers(allUsersRes.data as User[]);
+    } else {
+        setUsers(activeUser ? [activeUser] : []);
+    }
+    
+    if (historyDataRes.data) {
+        const groupedHistory = historyDataRes.data.reduce((acc, history) => {
+            const key = history.item_id;
+            if (!acc[key]) acc[key] = [];
+            acc[key].push(history);
+            return acc;
+        }, {} as Record<string, ItemHistory[]>);
+        setHistoryData(groupedHistory);
+    }
+  }, []);
+  
+  const loadInitialData = useCallback(async (session: Session) => {
+    setIsDataLoading(true);
+    setDataError(null);
+    try {
+        // Step 1: Get or create the user profile from the 'users' table.
+        const { data: userProfile, error: profileError } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', session.user.id)
+            .single();
+
+        let activeUser: User | null = userProfile;
+
+        // If profile doesn't exist (PGRST116: No rows found), create it.
+        if (profileError && profileError.code === 'PGRST116') {
+            console.warn(`Profile for user ${session.user.id} not found. Creating a new one.`);
+            const { data: newProfile, error: insertError } = await supabase
+                .from('users')
+                .insert({
+                    id: session.user.id,
+                    email: session.user.email,
+                    name: session.user.email?.split('@')[0] || 'Novo Usuário',
+                    profile: 'Operador', // Default to 'Operador'
+                    avatar_url: `https://api.dicebear.com/8.x/initials/svg?seed=${session.user.email}`
+                })
+                .select()
+                .single();
+            
+            if (insertError) {
+                throw new Error(`Failed to create user profile: ${insertError.message}`);
+            }
+            activeUser = newProfile;
+        } else if (profileError) {
+            throw profileError; // Rethrow other errors.
         }
-        setStockItems(prev => prev.map(i => i.id === data.itemId ? {...i, systemStock: newStock} : i));
+
+        if (!activeUser) {
+            throw new Error("Could not retrieve or create a user profile.");
+        }
         
-        const newHistoryEntry: ExitItemHistory = {
-            id: `h-${Date.now()}`,
-            date: new Date().toLocaleDateString('pt-BR'),
-            type: 'Saída',
-            quantity: data.quantity,
-            user: 'Administrador', // Mocked user
-            requester: data.requester,
-            responsible: data.responsible,
-        };
+        setCurrentUser(activeUser); // Set current user immediately
+        
+        // Step 2: Fetch all other application data.
+        await withTimeout(fetchData(activeUser), 15000);
 
-        setHistoryData(prev => ({
-            ...prev,
-            [data.itemId]: [newHistoryEntry, ...(prev[data.itemId] || [])]
-        }));
+    } catch (error) {
+        const errorMessage = "Falha na conexão com o servidor. Verifique sua internet e tente novamente.";
+        console.error("Falha ao carregar dados ou perfil:", error);
+        showToast(errorMessage);
+        setDataError(errorMessage);
+    } finally {
+        setIsDataLoading(false);
+    }
+  }, [fetchData, showToast]);
 
-        addAuditLog(`Registrou saída de ${data.quantity} unidade(s) do item ${item.code} para ${data.requester}.`);
+  // Effect for handling auth state changes (login/logout)
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (session) {
+            setIsLoggedIn(true);
+            await loadInitialData(session);
+        } else {
+            setIsLoggedIn(false);
+            setCurrentUser(null);
+            setStockItems([]);
+            setUsers([]);
+            setSuppliers([]);
+            setAuditLogs([]);
+            setHistoryData({});
+        }
+        setIsAuthLoading(false);
+    });
+
+    return () => {
+        subscription.unsubscribe();
+    };
+  }, [loadInitialData]);
+
+  const handleRetry = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session) {
+        await loadInitialData(session);
+    } else {
+        // This case is unlikely if the error screen is shown, but good to handle.
+        setIsLoggedIn(false); 
+        setIsAuthLoading(false);
+    }
+  }, [loadInitialData]);
+
+
+  const handleLogout = useCallback(async () => {
+      await supabase.auth.signOut();
+  }, []);
+
+  const addAuditLog = useCallback(async (action: string) => {
+    if (!currentUser?.name) {
+        console.warn("Audit log skipped: current user not available.");
+        return;
+    };
+    const { error } = await supabase
+        .from('audit_logs')
+        .insert([{ action, user: currentUser.name }]);
+
+    if (error) {
+        console.error("Failed to add audit log:", error.message);
+    }
+  }, [currentUser]);
+
+  // ============================================================================
+  // Centralized Data Mutation Handlers with Refresh Logic
+  // ============================================================================
+
+  const triggerRefresh = async () => {
+      if (!currentUser) return;
+      setIsRefreshing(true);
+      try {
+          await fetchData(currentUser);
+      } finally {
+          setIsRefreshing(false);
+      }
+  };
+
+  // User Handlers (profiles, not auth)
+    const handleAddUser = async (user: Omit<User, 'id' | 'avatar_url'> & { password?: string }): Promise<{success: boolean, error?: string}> => {
+        if (!user.password) return { success: false, error: 'A senha é obrigatória.' };
+        
+        const { data: { session: adminSession } } = await supabase.auth.getSession();
+        if (!adminSession) return { success: false, error: 'Sessão de administrador não encontrada.' };
+
+        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+            email: user.email,
+            password: user.password,
+        });
+
+        await supabase.auth.setSession({ access_token: adminSession.access_token, refresh_token: adminSession.refresh_token });
+
+        if (signUpError) return { success: false, error: signUpError.message };
+        if (!signUpData.user) return { success: false, error: 'Não foi possível criar o usuário.' };
+
+        const newUserId = signUpData.user.id;
+        const defaultAvatar = `https://api.dicebear.com/8.x/initials/svg?seed=${user.name}`;
+        const { error: profileError } = await supabase
+            .from('users')
+            .insert({ id: newUserId, name: user.name, email: user.email, profile: user.profile, avatar_url: defaultAvatar });
+
+        if (profileError) return { success: false, error: profileError.message };
+
+        await addAuditLog(`Criou o usuário ${user.name} (${user.email}).`);
+        await triggerRefresh();
+        return { success: true };
+    };
+
+    const handleUpdateUser = async (updatedUser: User) => {
+        const { error } = await supabase.from('users').update(updatedUser).eq('id', updatedUser.id);
+        if (error) {
+            showToast(`Erro ao atualizar: ${error.message}`);
+        } else {
+            await addAuditLog(`Atualizou o usuário ${updatedUser.name}.`);
+            await triggerRefresh();
+        }
+    };
+
+    const handleDeleteUser = async (userId: string) => {
+        const user = users.find(u => u.id === userId);
+        if (!user) return;
+        const { error } = await supabase.from('users').delete().eq('id', userId);
+        if (error) {
+            showToast(`Erro ao excluir perfil: ${error.message}`);
+        } else {
+            await addAuditLog(`Excluiu o perfil do usuário ${user.name}.`);
+            await triggerRefresh();
+        }
+    };
+  
+    const handleUpdateAvatar = async (file: File) => {
+        if (!currentUser) return;
+        const filePath = currentUser.id;
+
+        const { error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
+        if (uploadError) { showToast(`Falha no upload: ${uploadError.message}`); return; }
+
+        const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+        const publicUrl = `${urlData.publicUrl}?t=${new Date().getTime()}`;
+
+        const { error: updateError } = await supabase.from('users').update({ avatar_url: publicUrl }).eq('id', currentUser.id);
+        if (updateError) {
+             showToast(`Falha ao atualizar perfil: ${updateError.message}`);
+        } else {
+            await addAuditLog(`Atualizou a foto do perfil.`);
+            await triggerRefresh();
+            showToast('Foto do perfil atualizada com sucesso!');
+        }
+    };
+
+  // Supplier Handlers
+  const handleAddSupplier = async (supplier: Omit<Supplier, 'id'>) => {
+    const { error } = await supabase.from('suppliers').insert([supplier]);
+    if (error) {
+        showToast(`Erro ao adicionar: ${error.message}`);
+    } else {
+        await addAuditLog(`Adicionou o fornecedor ${supplier.name}.`);
+        await triggerRefresh();
+    }
+  };
+
+  const handleUpdateSupplier = async (updatedSupplier: Supplier) => {
+    const { error } = await supabase.from('suppliers').update(updatedSupplier).eq('id', updatedSupplier.id);
+    if (error) {
+        showToast(`Erro ao atualizar: ${error.message}`);
+    } else {
+        await addAuditLog(`Atualizou o fornecedor ${updatedSupplier.name}.`);
+        await triggerRefresh();
+    }
+  };
+
+  const handleDeleteSupplier = async (supplierId: number) => {
+    const supplier = suppliers.find(s => s.id === supplierId);
+    const { error } = await supabase.from('suppliers').delete().eq('id', supplierId);
+    if (error) {
+        showToast(`Erro ao excluir: ${error.message}`);
+    } else if (supplier) {
+        await addAuditLog(`Excluiu o fornecedor ${supplier.name}.`);
+        await triggerRefresh();
+    }
+  };
+  
+  // Stock Item Handlers
+  const handleAddItem = async (item: Omit<StockItem, 'id' | 'system_stock' | 'suppliers'>) => {
+    const { error } = await supabase.from('stock_items').insert({ ...item, system_stock: item.initial_stock });
+    if (error) {
+        showToast(`Erro ao adicionar item: ${error.message}`);
+    } else {
+        await addAuditLog(`Criou o item ${item.code} - ${item.description}.`);
+        await triggerRefresh();
+    }
+  };
+
+  const handleBulkAddItems = async (items: Omit<StockItem, 'id' | 'system_stock' | 'suppliers'>[]) => {
+      const itemsToInsert = items.map(item => ({ ...item, system_stock: 0 }));
+      const { error } = await supabase.from('stock_items').insert(itemsToInsert);
+      if (error) {
+          showToast(`Erro ao importar itens em massa: ${error.message}`);
+      } else {
+          await addAuditLog(`Importou ${items.length} novos itens em massa.`);
+          await triggerRefresh();
+          showToast(`${items.length} itens foram importados com sucesso!`);
+      }
+  };
+
+  const handleUpdateItem = async (itemId: string, itemData: Partial<StockItem>) => {
+    const { error } = await supabase.from('stock_items').update(itemData).eq('id', itemId);
+    if (error) {
+        showToast(`Falha ao atualizar o item: ${error.message}`);
+    } else {
+        await addAuditLog(`Editou o item ${itemData.code}.`);
+        await triggerRefresh();
+    }
+  };
+
+  const handleDeleteItem = async (item: StockItem) => {
+      const { error } = await supabase.from('stock_items').delete().eq('id', item.id);
+      if (error) {
+          showToast(`Erro ao excluir: ${error.message}`);
+      } else {
+          await addAuditLog(`Excluiu o item ${item.code} - ${item.description}.`);
+          await triggerRefresh();
       }
   };
   
-  // Backup Handler
-  const handleRestoreBackup = (data: any) => {
-      // Basic validation
-      if (data.stockItems && data.users && data.suppliers && data.auditLogs && data.historyData) {
-        setStockItems(data.stockItems);
-        setUsers(data.users);
-        setSuppliers(data.suppliers);
-        setAuditLogs(data.auditLogs);
-        setHistoryData(data.historyData);
-        addAuditLog('Sistema restaurado a partir de um backup.');
+  const handleAdjustInventory = async (adjustments: { id: string; counted: number; }[]) => {
+      const updates = adjustments.map(adj => 
+        supabase.from('stock_items').update({ system_stock: adj.counted }).eq('id', adj.id)
+      );
+      const results = await Promise.all(updates);
+      const firstError = results.find(res => res.error)?.error;
+
+      if (firstError) {
+          showToast(`Erro ao ajustar o estoque: ${firstError.message}`);
       } else {
-        alert('Arquivo de backup inválido ou corrompido.');
+          for (const adj of adjustments) {
+            const item = stockItems.find(i => i.id === adj.id);
+            if(item) await addAuditLog(`Ajuste de inventário para o item ${item.code}: de ${item.system_stock} para ${adj.counted}.`);
+          }
+          await triggerRefresh();
       }
   };
 
+  // Movement Handlers
+  const handleRegisterEntry = async (data: { itemId: string; quantity: number; supplier: string; nf: string; observations: string; }) => {
+      const item = stockItems.find(i => i.id === data.itemId);
+      if (!item) { alert('Item não encontrado!'); return; }
+      
+      const { error: rpcError } = await supabase.rpc('increment_stock', { item_id_param: data.itemId, quantity_param: data.quantity });
+      if (rpcError) { alert("Erro ao atualizar o estoque via RPC."); return; }
+
+      const newHistoryEntry: Omit<EntryItemHistory, 'id'> = {
+          item_id: data.itemId,
+          date: new Date().toLocaleDateString('pt-BR'),
+          type: 'Entrada',
+          quantity: data.quantity,
+          user: currentUser?.name || 'Sistema',
+          details: `Fornecedor: ${data.supplier || 'N/A'}. NF: ${data.nf || 'N/A'}. Obs: ${data.observations || 'N/A'}`
+      };
+      const { error: historyError } = await supabase.from('item_history').insert([newHistoryEntry]);
+      if (historyError) { showToast("Estoque atualizado, mas houve um erro ao salvar o histórico."); return; }
+
+      await addAuditLog(`Registrou entrada de ${data.quantity} unidade(s) do item ${item.code}. NF: ${data.nf}.`);
+      await triggerRefresh();
+  };
+
+  const handleRegisterExit = async (data: { itemId: string; quantity: number; requester: string; responsible: string; }) => {
+      const item = stockItems.find(i => i.id === data.itemId);
+      if (!item) { alert('Item não encontrado!'); return; }
+
+      if (item.system_stock - data.quantity < 0) { alert('A quantidade de saída é maior que o estoque atual!'); return; }
+      
+      const { error: rpcError } = await supabase.rpc('decrement_stock', { item_id_param: data.itemId, quantity_param: data.quantity });
+      if (rpcError) { alert("Erro ao atualizar o estoque via RPC."); return; }
+      
+      const newHistoryEntry: Omit<ExitItemHistory, 'id'> = {
+          item_id: data.itemId,
+          date: new Date().toLocaleDateString('pt-BR'),
+          type: 'Saída',
+          quantity: data.quantity,
+          user: currentUser?.name || 'Sistema',
+          requester: data.requester,
+          responsible: data.responsible,
+      };
+      const { error: historyError } = await supabase.from('item_history').insert([newHistoryEntry]);
+      if (historyError) { showToast("Estoque atualizado, mas houve um erro ao salvar o histórico."); return; }
+
+      await addAuditLog(`Registrou saída de ${data.quantity} unidade(s) do item ${item.code} para ${data.requester}.`);
+      await triggerRefresh();
+  };
+  
+  const Spinner = () => (
+    <svg className="animate-spin h-8 w-8 text-alumasa-blue" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    </svg>
+  );
+  
+  if (isAuthLoading) {
+    return (
+        <div className="flex h-screen flex-col items-center justify-center bg-alumasa-deep-blue text-white">
+            <Spinner />
+            <span className="text-lg mt-4">Verificando sessão...</span>
+        </div>
+    );
+  }
 
   if (!isLoggedIn) {
-    return <Login onLogin={handleLogin} />;
+    return <Login />;
   }
   
   const PageWrapper: React.FC<{children: React.ReactNode}> = ({ children }) => (
@@ -843,40 +1118,79 @@ const App: React.FC = () => {
        {children}
      </div>
   );
-  
-  const allData = { stockItems, users, suppliers, auditLogs, historyData };
-  
-  const loggedInUser = users.find(u => u.profile === 'Administrador');
 
   return (
     <div className="flex h-screen bg-gray-100 font-sans">
+      {isRefreshing && (
+        <div className="fixed inset-0 bg-white bg-opacity-75 z-[9999] flex items-center justify-center" role="status" aria-live="polite">
+            <div className="flex items-center space-x-3 text-gray-700">
+                <svg className="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span className="text-lg font-medium">Atualizando...</span>
+            </div>
+        </div>
+      )}
       <Sidebar onLogout={handleLogout} />
       <div className="flex-1 flex flex-col overflow-hidden">
-        <Header user={loggedInUser} stockItems={stockItems} />
+        <Header user={currentUser} stockItems={stockItems} onUpdateAvatar={handleUpdateAvatar} />
         <main className="flex-1 flex overflow-hidden">
-          <Routes>
-            <Route path="/" element={<Navigate to="/painel" replace />} />
-            <Route path="/painel" element={<PageWrapper><Painel stockItems={stockItems} historyData={historyData} /></PageWrapper>} />
-            <Route path="/estoque/atual" element={<PageWrapper><EstoquePage stockItems={stockItems} setStockItems={setStockItems} suppliers={suppliers} addAuditLog={addAuditLog} showToast={showToast} historyData={historyData} /></PageWrapper>} />
-            <Route path="/estoque/inventario" element={<PageWrapper><InventoryPage stockItems={stockItems} setStockItems={setStockItems} addAuditLog={addAuditLog} showToast={showToast} /></PageWrapper>} />
-            <Route path="/movimentacoes/:tab" element={<PageWrapper><MovimentacoesPage stockItems={stockItems} suppliers={suppliers} onRegisterEntry={handleRegisterEntry} onRegisterExit={handleRegisterExit} showToast={showToast} /></PageWrapper>} />
-            <Route path="/controle/:tab" element={<PageWrapper><ControlePage 
-                users={users} 
-                suppliers={suppliers} 
-                allData={allData}
-                onAddUser={handleAddUser}
-                onUpdateUser={handleUpdateUser}
-                onDeleteUser={handleDeleteUser}
-                onAddSupplier={handleAddSupplier}
-                onUpdateSupplier={handleUpdateSupplier}
-                onDeleteSupplier={handleDeleteSupplier}
-                onRestoreBackup={handleRestoreBackup}
-                showToast={showToast}
-            /></PageWrapper>} />
-            <Route path="/auditoria/monitoramento" element={<PageWrapper><AuditPage auditLogs={auditLogs} /></PageWrapper>} />
-            <Route path="/relatorios" element={<PageWrapper><RelatoriosPage title="Relatórios" stockItems={stockItems} historyData={historyData} /></PageWrapper>} />
-            <Route path="*" element={<Navigate to="/painel" replace />} />
-          </Routes>
+          {isDataLoading ? (
+             <div className="flex-1 flex flex-col items-center justify-center bg-gray-100 p-6">
+                <Spinner />
+                <p className="mt-4 text-lg text-gray-600">Carregando dados do almoxarifado...</p>
+            </div>
+          ) : dataError ? (
+            <div className="flex-1 flex flex-col items-center justify-center bg-gray-100 p-6 text-center">
+                <svg className="h-16 w-16 text-red-500 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h2 className="mt-4 text-2xl font-semibold text-gray-800">Erro ao Carregar Dados</h2>
+                <p className="mt-2 text-gray-600">{dataError}</p>
+                <button 
+                    onClick={handleRetry} 
+                    className="mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-md transition duration-300"
+                >
+                    Tentar Novamente
+                </button>
+            </div>
+          ) : (
+            <Routes>
+              <Route path="/" element={<Navigate to="/painel" replace />} />
+              <Route path="/painel" element={<PageWrapper><Painel stockItems={stockItems} historyData={historyData} /></PageWrapper>} />
+              <Route path="/estoque/atual" element={<PageWrapper><EstoquePage 
+                  stockItems={stockItems} 
+                  suppliers={suppliers} 
+                  showToast={showToast} 
+                  historyData={historyData}
+                  onAddItem={handleAddItem}
+                  onBulkAddItems={handleBulkAddItems}
+                  onUpdateItem={handleUpdateItem}
+                  onDeleteItem={handleDeleteItem}
+              /></PageWrapper>} />
+              <Route path="/estoque/inventario" element={<PageWrapper><InventoryPage 
+                  stockItems={stockItems} 
+                  showToast={showToast}
+                  onAdjustInventory={handleAdjustInventory}
+              /></PageWrapper>} />
+              <Route path="/movimentacoes/:tab" element={<PageWrapper><MovimentacoesPage stockItems={stockItems} suppliers={suppliers} onRegisterEntry={handleRegisterEntry} onRegisterExit={handleRegisterExit} showToast={showToast} /></PageWrapper>} />
+              <Route path="/controle/:tab" element={<PageWrapper><ControlePage 
+                  users={users} 
+                  suppliers={suppliers} 
+                  onAddUser={handleAddUser}
+                  onUpdateUser={handleUpdateUser}
+                  onDeleteUser={handleDeleteUser}
+                  onAddSupplier={handleAddSupplier}
+                  onUpdateSupplier={handleUpdateSupplier}
+                  onDeleteSupplier={handleDeleteSupplier}
+                  showToast={showToast}
+              /></PageWrapper>} />
+              <Route path="/auditoria/monitoramento" element={<PageWrapper><AuditPage auditLogs={auditLogs} /></PageWrapper>} />
+              <Route path="/relatorios" element={<PageWrapper><RelatoriosPage title="Relatórios" stockItems={stockItems} historyData={historyData} suppliers={suppliers} /></PageWrapper>} />
+              <Route path="*" element={<Navigate to="/painel" replace />} />
+            </Routes>
+          )}
         </main>
       </div>
       <div className={`toast success ${toastMessage ? 'show' : ''}`}>

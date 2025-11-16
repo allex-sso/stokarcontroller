@@ -1,22 +1,40 @@
 
 
 
+export const WAREHOUSE_CATEGORIES = [
+    'EPI', 
+    'Ferramentas', 
+    'Materiais de Escritório', 
+    'Uniformes', 
+    'Consumíveis', 
+    'Limpeza', 
+    'Matéria-prima', 
+    'Componentes Elétricos', 
+    'Componentes Mecânicos',
+    'Componentes Hidráulicos',
+    'Outros'
+];
+
 export interface StockItem {
-  id: string;
+  id: string; // uuid
   code: string;
   description: string;
+  category: string;
   equipment: string;
   location: string;
   unit: 'Unidade' | 'Quilograma' | 'Metro' | 'Par' | 'Bobina' | 'Caixa' | 'Peças' | 'Litro' | 'Pacote' | 'Rolo' | 'Saco' | 'Vara' | 'Lata' | 'Carretel';
-  systemStock: number;
-  minStock: number;
+  system_stock: number;
+  initial_stock: number;
+  min_stock: number;
   value: number;
   countedStock?: number;
-  supplier?: string | string[];
+  supplier_id?: number;
+  suppliers?: { id: number, name: string }; // For joined data
 }
 
 export interface BaseItemHistory {
-  id: string;
+  id: string; // uuid
+  item_id: string; // foreign key to stock_items
   date: string;
   quantity: number;
   user: string;
@@ -36,11 +54,11 @@ export interface ExitItemHistory extends BaseItemHistory {
 export type ItemHistory = EntryItemHistory | ExitItemHistory;
 
 export interface User {
-  id: number;
+  id: string; // uuid from auth.users
   name: string;
   email: string;
   profile: 'Administrador' | 'Operador';
-  avatarUrl: string;
+  avatar_url: string;
 }
 
 export interface Supplier {

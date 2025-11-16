@@ -1,29 +1,34 @@
-
 import React, { useState, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { StockItem, User } from '../types';
 
 interface HeaderProps {
-    user?: User;
+    user: User | null;
     stockItems: StockItem[];
+    onUpdateAvatar: (file: File) => Promise<void>;
 }
 
-const Header: React.FC<HeaderProps> = ({ user, stockItems }) => {
-    const [avatarUrl, setAvatarUrl] = useState('https://i.pravatar.cc/150?u=admin@alumasa.com');
+const Header: React.FC<HeaderProps> = ({ user, stockItems, onUpdateAvatar }) => {
+    const [isUploading, setIsUploading] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
     
-    const itemsAbaixoMinimoCount = stockItems.filter(i => i.systemStock <= i.minStock).length;
+    const itemsAbaixoMinimoCount = stockItems.filter(i => i.system_stock <= i.min_stock).length;
 
     const handleAvatarClick = () => {
-        fileInputRef.current?.click();
+        if (!isUploading) {
+            fileInputRef.current?.click();
+        }
     };
-
-    const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    
+    const handleFileSelected = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (file) {
-            // In a real app, you'd upload this file to a server.
-            // For this demo, we'll use a local object URL.
-            setAvatarUrl(URL.createObjectURL(file));
+            setIsUploading(true);
+            await onUpdateAvatar(file);
+            setIsUploading(false);
+        }
+        if (event.target) {
+            event.target.value = '';
         }
     };
     
@@ -54,16 +59,25 @@ const Header: React.FC<HeaderProps> = ({ user, stockItems }) => {
                     <input 
                         type="file" 
                         ref={fileInputRef}
-                        onChange={handleFileChange}
                         className="hidden"
                         accept="image/*"
+                        onChange={handleFileSelected}
                     />
                     <button 
                         onClick={handleAvatarClick} 
                         title="Alterar imagem do perfil"
-                        className="rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        className="relative rounded-full focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                        disabled={isUploading}
                     >
-                        <img className="h-9 w-9 rounded-full object-cover" src={avatarUrl} alt="Admin" />
+                        <img className="h-9 w-9 rounded-full object-cover" src={user?.avatar_url} alt="User avatar" />
+                         {isUploading && (
+                            <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center">
+                                <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            </div>
+                        )}
                     </button>
                 </div>
             </div>

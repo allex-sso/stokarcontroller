@@ -1,11 +1,11 @@
-
-import React, { useState, useRef, useMemo } from 'react';
-import { StockItem, ItemHistory } from '../types';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import { StockItem, ItemHistory, Supplier } from '../types';
 
 interface RelatoriosPageProps {
   title: string;
   stockItems: StockItem[];
   historyData: Record<string, ItemHistory[]>;
+  suppliers: Supplier[];
 }
 
 const printContent = (content: HTMLDivElement | null, title: string) => {
@@ -57,10 +57,13 @@ const printContent = (content: HTMLDivElement | null, title: string) => {
     }
 };
 
-const AbaixoMinimoReport: React.FC<{ stockItems: StockItem[] }> = ({ stockItems }) => {
+const AbaixoMinimoReport: React.FC<{ stockItems: StockItem[], suppliers: Supplier[] }> = ({ stockItems, suppliers }) => {
   const [filterText, setFilterText] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const ITEMS_PER_PAGE = 10;
+
   const itemsAbaixoMinimo = useMemo(() => {
-    let items = stockItems.filter(i => i.systemStock <= i.minStock);
+    let items = stockItems.filter(i => i.system_stock <= i.min_stock);
     if (filterText) {
         items = items.filter(i => 
             i.code.toLowerCase().includes(filterText.toLowerCase()) ||
@@ -70,6 +73,17 @@ const AbaixoMinimoReport: React.FC<{ stockItems: StockItem[] }> = ({ stockItems 
     return items;
   }, [stockItems, filterText]);
   
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterText]);
+
+  const totalPages = Math.ceil(itemsAbaixoMinimo.length / ITEMS_PER_PAGE);
+  const paginatedItems = useMemo(() => {
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    return itemsAbaixoMinimo.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [currentPage, itemsAbaixoMinimo]);
+
+
   const [pedidoItems, setPedidoItems] = useState<Record<string, string>>({});
   const [showPedidoModal, setShowPedidoModal] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
@@ -84,11 +98,10 @@ const AbaixoMinimoReport: React.FC<{ stockItems: StockItem[] }> = ({ stockItems 
     return description && description.trim() !== '';
   });
   
-  const formatSupplier = (supplier: string | string[] | undefined): string => {
-      if (Array.isArray(supplier)) {
-          return supplier.join(', ');
-      }
-      return supplier || 'N/A';
+  const formatSupplier = (supplierId: number | undefined): string => {
+      if (!supplierId) return 'N/A';
+      const supplier = suppliers.find(s => s.id === supplierId);
+      return supplier?.name || 'N/A';
   };
   
   const handlePrint = () => {
@@ -139,13 +152,13 @@ const AbaixoMinimoReport: React.FC<{ stockItems: StockItem[] }> = ({ stockItems 
                     </tr>
                 </thead>
                 <tbody>
-                    {itemsAbaixoMinimo.map(item => (
+                    {paginatedItems.map(item => (
                         <tr key={item.id} className="border-b">
                             <td className="p-2 text-sm">{item.code}</td>
                             <td className="p-2 text-sm">{item.description}</td>
-                            <td className="p-2 text-sm text-red-600 font-bold">{item.systemStock}</td>
-                            <td className="p-2 text-sm">{item.minStock}</td>
-                            <td className="p-2 text-sm">{formatSupplier(item.supplier)}</td>
+                            <td className="p-2 text-sm text-red-600 font-bold">{item.system_stock}</td>
+                            <td className="p-2 text-sm">{item.min_stock}</td>
+                            <td className="p-2 text-sm">{formatSupplier(item.supplier_id)}</td>
                         </tr>
                     ))}
                      {itemsAbaixoMinimo.length === 0 && (
@@ -155,6 +168,20 @@ const AbaixoMinimoReport: React.FC<{ stockItems: StockItem[] }> = ({ stockItems 
                      )}
                 </tbody>
             </table>
+            
+            <div className="flex justify-between items-center mt-4 text-sm text-gray-600 no-print">
+                <p>Mostrando {paginatedItems.length} de {itemsAbaixoMinimo.length} registros</p>
+                {totalPages > 1 && (
+                    <div className="flex items-center space-x-1">
+                        <button onClick={() => setCurrentPage(1)} disabled={currentPage === 1} className="px-2 py-1 border rounded-md disabled:opacity-50">Primeira</button>
+                        <button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} className="px-2 py-1 border rounded-md disabled:opacity-50">Anterior</button>
+                        <span className="px-3 py-1 bg-gray-200 rounded-md">Página {currentPage} de {totalPages}</span>
+                        <button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} className="px-2 py-1 border rounded-md disabled:opacity-50">Próxima</button>
+                        <button onClick={() => setCurrentPage(totalPages)} disabled={currentPage === totalPages} className="px-2 py-1 border rounded-md disabled:opacity-50">Última</button>
+                    </div>
+                )}
+            </div>
+
              <div className="flex justify-end mt-4 no-print">
                 <button onClick={() => setShowPedidoModal(true)} disabled={itemsAbaixoMinimo.length === 0} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-md text-sm disabled:opacity-50 disabled:cursor-not-allowed">
                    Realizar Pedido
@@ -184,7 +211,7 @@ const AbaixoMinimoReport: React.FC<{ stockItems: StockItem[] }> = ({ stockItems 
                                     <tr key={item.id} className="border-b">
                                         <td className="p-2 text-sm">{item.code}</td>
                                         <td className="p-2 text-sm">{item.description}</td>
-                                        <td className="p-2 text-sm">{formatSupplier(item.supplier)}</td>
+                                        <td className="p-2 text-sm">{formatSupplier(item.supplier_id)}</td>
                                         <td className="p-2">
                                             <input 
                                                 type="text" 
@@ -227,7 +254,7 @@ const AbaixoMinimoReport: React.FC<{ stockItems: StockItem[] }> = ({ stockItems 
                             <tr key={item.id}>
                                 <td className="border p-2">{item.code}</td>
                                 <td className="border p-2">{item.description}</td>
-                                <td className="border p-2">{formatSupplier(item.supplier)}</td>
+                                <td className="border p-2">{formatSupplier(item.supplier_id)}</td>
                                 <td className="border p-2">{pedidoItems[item.code]}</td>
                             </tr>
                         ))}
@@ -340,7 +367,7 @@ const ValorPorLocalReport: React.FC<{ stockItems: StockItem[] }> = ({ stockItems
                 acc[location] = { itemCount: 0, totalValue: 0 };
             }
             acc[location].itemCount++;
-            acc[location].totalValue += item.systemStock * item.value;
+            acc[location].totalValue += item.system_stock * item.value;
             return acc;
         }, {} as Record<string, { itemCount: number, totalValue: number }>);
 
@@ -388,7 +415,7 @@ const ValorPorLocalReport: React.FC<{ stockItems: StockItem[] }> = ({ stockItems
 };
 
 
-const RelatoriosPage: React.FC<RelatoriosPageProps> = ({ title, stockItems, historyData }) => {
+const RelatoriosPage: React.FC<RelatoriosPageProps> = ({ title, stockItems, historyData, suppliers }) => {
   const [activeTab, setActiveTab] = useState('abaixoMinimo');
   
   const renderContent = () => {
@@ -399,7 +426,7 @@ const RelatoriosPage: React.FC<RelatoriosPageProps> = ({ title, stockItems, hist
             return <ValorPorLocalReport stockItems={stockItems} />;
         case 'abaixoMinimo':
         default:
-            return <AbaixoMinimoReport stockItems={stockItems} />;
+            return <AbaixoMinimoReport stockItems={stockItems} suppliers={suppliers} />;
     }
   };
 

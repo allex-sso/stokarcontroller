@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { ICONS, AlumasaLogo } from '../constants';
@@ -17,6 +18,14 @@ interface SidebarProps {
 const navItems: NavItem[] = [
     { path: '/painel', icon: ICONS.panel, label: 'Painel' },
     { 
+        label: 'Cadastros', 
+        icon: ICONS.cadastros, 
+        subItems: [
+            { path: '/controle/fornecedores', label: 'Fornecedores' },
+            { path: '/controle/usuarios', label: 'Usuários' },
+        ]
+    },
+    { 
         label: 'Estoque', 
         icon: ICONS.stock, 
         subItems: [
@@ -30,15 +39,6 @@ const navItems: NavItem[] = [
         subItems: [
             { path: '/movimentacoes/nova-entrada', label: 'Nova Entrada' },
             { path: '/movimentacoes/nova-saida', label: 'Nova Saída' },
-        ]
-    },
-    { 
-        label: 'Controle', 
-        icon: ICONS.control,
-        subItems: [
-            { path: '/controle/usuarios', label: 'Usuários' },
-            { path: '/controle/fornecedores', label: 'Fornecedores' },
-            { path: '/controle/backup', label: 'Backup e Restauração' },
         ]
     },
     { 
