@@ -729,7 +729,7 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({ stockItems, suppliers,
                 <tr className="bg-gray-50 border-b">
                 <th className="p-3 w-12"><input type="checkbox" onChange={handleSelectAll} checked={displayedItems.length > 0 && selectedItems.length === displayedItems.length} /></th>
                 <th className="p-3 text-sm font-semibold text-gray-600 w-36">CÓDIGO</th>
-                <th className="p-3 text-sm font-semibold text-gray-600">DESCRIÇÃO</th>
+                <th className="p-3 text-sm font-semibold text-gray-600 min-w-[200px]">DESCRIÇÃO</th>
                 <th className="p-3 text-sm font-semibold text-gray-600 w-48">EQUIPAMENTO</th>
                 <th className="p-3 text-sm font-semibold text-gray-600 w-40">LOCALIZAÇÃO</th>
                 <th className="p-3 text-sm font-semibold text-gray-600 w-32">QUANTIDADE</th>
@@ -746,7 +746,7 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({ stockItems, suppliers,
                         {item.system_stock <= item.min_stock && <span className="inline-block w-2.5 h-2.5 bg-red-500 rounded-full mr-2" title="Estoque baixo"></span>}
                         {item.code}
                     </td>
-                    <td className="p-3 text-sm text-gray-500 truncate" title={item.description}>{item.description}</td>
+                    <td className="p-3 text-sm text-gray-500 truncate max-w-[250px]" title={item.description}>{item.description}</td>
                     <td className="p-3 text-sm text-gray-500">{item.equipment}</td>
                     <td className="p-3 text-sm text-gray-500">{item.location}</td>
                     <td className="p-3 text-sm text-gray-500">{item.system_stock}</td>
