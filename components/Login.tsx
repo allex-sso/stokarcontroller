@@ -55,6 +55,8 @@ const Login: React.FC<LoginProps> = () => {
               <input
                 id="email"
                 type="email"
+                autoFocus
+                placeholder="seu.email@alumasa.com.br"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="appearance-none border border-gray-300 rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:ring-2 focus:ring-blue-500"

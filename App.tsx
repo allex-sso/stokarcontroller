@@ -717,63 +717,71 @@ const App: React.FC = () => {
   }, []);
 
   const fetchData = useCallback(async (activeUser: User) => {
-    const [
-        stockItemsRes,
-        allUsersRes,
-        suppliersRes,
-        auditLogsRes,
-        historyDataRes,
-    ] = await Promise.all([
+    // 1. Critical Data: Must load for the app to be usable.
+    const criticalPromises = [
         supabase.from('stock_items').select('id, code, description, category, equipment, location, unit, system_stock, min_stock, value, supplier_id'),
         supabase.from('users').select('*'),
         supabase.from('suppliers').select('*'),
+    ];
+
+    // 2. Non-Critical Data: If these fail (timeout, etc.), app should still load.
+    const nonCriticalPromises = [
         supabase.from('audit_logs').select('*').order('timestamp', { ascending: false }).limit(200),
         supabase.from('item_history').select('*'),
-    ]);
+    ];
 
-    // Check for errors before processing data
-    const responses = {
-        'itens de estoque': stockItemsRes,
-        'usuários': allUsersRes,
-        'fornecedores': suppliersRes,
-        'logs de auditoria': auditLogsRes,
-        'histórico de itens': historyDataRes,
-    };
+    try {
+        // Await critical data
+        const [stockItemsRes, allUsersRes, suppliersRes] = await Promise.all(criticalPromises);
 
-    for (const [key, response] of Object.entries(responses)) {
-        if (response.error) {
-            throw new Error(`Falha ao buscar ${key}: ${response.error.message}`);
+        if (stockItemsRes.error) throw new Error(`Stock Items Error: ${stockItemsRes.error.message}`);
+        if (allUsersRes.error) throw new Error(`Users Error: ${allUsersRes.error.message}`);
+        if (suppliersRes.error) throw new Error(`Suppliers Error: ${suppliersRes.error.message}`);
+
+        // Data Sanitization: Ensure critical numerical fields are valid numbers.
+        const sanitizedStockItems = (stockItemsRes.data || []).map((item: any) => ({
+            ...item,
+            system_stock: Number(item.system_stock) || 0,
+            min_stock: Number(item.min_stock) || 0,
+            value: Number(item.value) || 0,
+        }));
+
+        setStockItems(sanitizedStockItems);
+        setSuppliers(suppliersRes.data || []);
+        
+        if (allUsersRes.data) {
+            setUsers(allUsersRes.data as User[]);
+        } else {
+            setUsers(activeUser ? [activeUser] : []);
         }
-    }
-    
-    // Data Sanitization: Ensure critical numerical fields are valid numbers.
-    const sanitizedStockItems = (stockItemsRes.data || []).map((item: any) => ({
-      ...item,
-      system_stock: Number(item.system_stock) || 0,
-      min_stock: Number(item.min_stock) || 0,
-      value: Number(item.value) || 0,
-    }));
 
-    setStockItems(sanitizedStockItems);
-    setSuppliers(suppliersRes.data || []);
-    setAuditLogs(auditLogsRes.data || []);
-    
-    if (allUsersRes.data) {
-        setUsers(allUsersRes.data as User[]);
-    } else {
-        setUsers(activeUser ? [activeUser] : []);
-    }
-    
-    if (historyDataRes.data) {
-        const groupedHistory = historyDataRes.data.reduce((acc, history) => {
-            const key = history.item_id;
-            if (!acc[key]) acc[key] = [];
-            acc[key].push(history);
-            return acc;
-        }, {} as Record<string, ItemHistory[]>);
-        setHistoryData(groupedHistory);
-    } else {
-        setHistoryData({});
+        // Attempt to load non-critical data resiliently
+        const [auditLogsRes, historyDataRes] = await Promise.allSettled(nonCriticalPromises);
+
+        if (auditLogsRes.status === 'fulfilled' && auditLogsRes.value.data) {
+             setAuditLogs(auditLogsRes.value.data as AuditLog[]);
+        } else {
+            console.warn("Failed to load audit logs (non-critical).", auditLogsRes.status === 'rejected' ? auditLogsRes.reason : auditLogsRes.value.error);
+            setAuditLogs([]); // Fallback to empty
+        }
+
+        if (historyDataRes.status === 'fulfilled' && historyDataRes.value.data) {
+            const groupedHistory = historyDataRes.value.data.reduce((acc: any, history: any) => {
+                const key = history.item_id;
+                if (!acc[key]) acc[key] = [];
+                acc[key].push(history);
+                return acc;
+            }, {} as Record<string, ItemHistory[]>);
+            setHistoryData(groupedHistory);
+        } else {
+             console.warn("Failed to load history (non-critical).", historyDataRes.status === 'rejected' ? historyDataRes.reason : historyDataRes.value.error);
+             setHistoryData({}); // Fallback to empty
+        }
+
+    } catch (error: any) {
+        // Only throw if CRITICAL data fails
+        console.error("Critical Data Load Failure:", error);
+        throw error; 
     }
   }, []);
   
@@ -804,17 +812,27 @@ const App: React.FC = () => {
             if (insertError) throw new Error(`Failed to create user profile: ${insertError.message}`);
             activeUser = newProfile;
         } else if (profileError) {
-            throw profileError;
+            // If profile error is permission related, we might still proceed with session user
+            console.warn("Profile load error:", profileError.message);
         }
 
-        if (!activeUser) throw new Error("Could not retrieve or create a user profile.");
+        // Fallback if no profile in DB but authenticated
+        if (!activeUser) {
+             activeUser = {
+                 id: session.user.id,
+                 email: session.user.email!,
+                 name: session.user.email?.split('@')[0] || 'Usuário',
+                 profile: 'Operador',
+                 avatar_url: ''
+             };
+        }
         
         setCurrentUser(activeUser);
         await fetchData(activeUser);
 
     } catch (error: any) {
         const message = error instanceof Error ? error.message : String(error);
-        const errorMessage = `Falha na conexão com o servidor: ${message}. Verifique sua conexão e as permissões do backend (RLS).`;
+        const errorMessage = `Falha na conexão com o servidor: ${message}. Verifique sua conexão e permissões.`;
         console.error("Falha ao carregar dados ou perfil:", error);
         showToast(errorMessage);
         setDataError(errorMessage);
@@ -859,13 +877,13 @@ const App: React.FC = () => {
         console.warn("Audit log skipped: current user not available.");
         return;
     };
-    const { error } = await supabase
+    // We don't await audit logs to prevent blocking UI
+    supabase
         .from('audit_logs')
-        .insert([{ action, user: currentUser.name }]);
-
-    if (error) {
-        console.error("Failed to add audit log:", error.message);
-    }
+        .insert([{ action, user: currentUser.name }])
+        .then(({ error }) => {
+            if (error) console.error("Failed to add audit log:", error.message);
+        });
   }, [currentUser]);
 
   const triggerRefresh = async () => {
