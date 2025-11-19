@@ -1,6 +1,4 @@
 
-
-
 export const WAREHOUSE_CATEGORIES = [
     'EPI', 
     'Ferramentas', 
@@ -12,7 +10,42 @@ export const WAREHOUSE_CATEGORIES = [
     'Componentes Elétricos', 
     'Componentes Mecânicos',
     'Componentes Hidráulicos',
+    'Construção Civil',
+    'Informática',
+    'Embalagens',
     'Outros'
+];
+
+export const UNIT_OPTIONS = [
+    'Unidade',
+    'Peça',
+    'Quilograma',
+    'Grama',
+    'Metro',
+    'Centímetro',
+    'Metro Quadrado',
+    'Metro Cúbico',
+    'Litro',
+    'Mililitro',
+    'Galão',
+    'Caixa',
+    'Pacote',
+    'Fardo',
+    'Saco',
+    'Rolo',
+    'Bobina',
+    'Lata',
+    'Bisnaga',
+    'Tambor',
+    'Par',
+    'Jogo',
+    'Kit',
+    'Conjunto',
+    'Cento',
+    'Milheiro',
+    'Tonelada',
+    'Vara',
+    'Carretel'
 ];
 
 export interface StockItem {
@@ -22,7 +55,7 @@ export interface StockItem {
   category: string;
   equipment: string;
   location: string;
-  unit: 'Unidade' | 'Quilograma' | 'Metro' | 'Par' | 'Bobina' | 'Caixa' | 'Peças' | 'Litro' | 'Pacote' | 'Rolo' | 'Saco' | 'Vara' | 'Lata' | 'Carretel';
+  unit: string;
   system_stock: number;
   initial_stock: number;
   min_stock: number;

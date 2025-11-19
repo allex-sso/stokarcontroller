@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { StockItem, Supplier, ItemHistory, WAREHOUSE_CATEGORIES } from '../types';
+import { StockItem, Supplier, ItemHistory, WAREHOUSE_CATEGORIES, UNIT_OPTIONS } from '../types';
 
 interface EstoquePageProps {
   stockItems: StockItem[];
@@ -211,31 +211,31 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
 
         <div className="bg-white shadow-md rounded-lg overflow-hidden">
             <div className="overflow-x-auto">
-                <table className="w-full text-left min-w-[1200px]">
+                <table className="w-full text-left min-w-[1600px] table-fixed">
                     <thead>
                         <tr className="bg-gray-50 border-b">
                             <th className="p-3 w-10"><input type="checkbox" onChange={handleSelectAll} checked={displayedItems.length > 0 && selectedItems.length === displayedItems.length} /></th>
-                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Código</th>
+                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider w-24">Código</th>
                             <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Descrição</th>
-                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Equipamento</th>
-                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Localização</th>
-                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Qtd</th>
-                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Mín</th>
-                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider">Valor</th>
-                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-center">Ações</th>
+                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider w-40">Equipamento</th>
+                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider w-32">Localização</th>
+                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider w-20">Qtd</th>
+                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider w-20">Mín</th>
+                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider w-28">Valor</th>
+                            <th className="p-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-center w-24">Ações</th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                         {paginatedItems.map(item => (
                             <tr key={item.id} className={item.system_stock <= item.min_stock ? 'bg-red-50' : 'hover:bg-gray-50'}>
                                 <td className="p-3"><input type="checkbox" checked={selectedItems.includes(item.id)} onChange={() => handleSelectItem(item.id)} /></td>
-                                <td className="p-3 text-sm font-medium text-gray-900">
+                                <td className="p-3 text-sm font-medium text-gray-900 truncate" title={item.code}>
                                     {item.system_stock <= item.min_stock && <span className="inline-block w-2 h-2 bg-red-500 rounded-full mr-2"></span>}
                                     {item.code}
                                 </td>
-                                <td className="p-3 text-sm text-gray-500 max-w-[250px] truncate" title={item.description}>{item.description}</td>
-                                <td className="p-3 text-sm text-gray-500 max-w-[150px] truncate" title={item.equipment}>{item.equipment}</td>
-                                <td className="p-3 text-sm text-gray-500">{item.location}</td>
+                                <td className="p-3 text-sm text-gray-500 truncate" title={item.description}>{item.description}</td>
+                                <td className="p-3 text-sm text-gray-500 truncate" title={item.equipment}>{item.equipment}</td>
+                                <td className="p-3 text-sm text-gray-500 truncate" title={item.location}>{item.location}</td>
                                 <td className="p-3 text-sm text-gray-500 font-semibold">{item.system_stock}</td>
                                 <td className="p-3 text-sm text-gray-500">{item.min_stock}</td>
                                 <td className="p-3 text-sm text-gray-500">R$ {item.value?.toFixed(2)}</td>
@@ -318,12 +318,14 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
                                             </div>
                                             <div>
                                                 <label className="block text-sm font-medium text-gray-700">Unidade</label>
-                                                <select value={editingItem?.unit || 'Unidade'} onChange={e => setEditingItem({...editingItem, unit: e.target.value as any})} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                                                    <option value="Unidade">Unidade</option>
-                                                    <option value="Quilograma">Quilograma</option>
-                                                    <option value="Metro">Metro</option>
-                                                    <option value="Caixa">Caixa</option>
-                                                    <option value="Pacote">Pacote</option>
+                                                <select 
+                                                    value={editingItem?.unit || 'Unidade'} 
+                                                    onChange={e => setEditingItem({...editingItem, unit: e.target.value as any})} 
+                                                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                                                >
+                                                    {UNIT_OPTIONS.map(unit => (
+                                                        <option key={unit} value={unit}>{unit}</option>
+                                                    ))}
                                                 </select>
                                             </div>
                                         </div>

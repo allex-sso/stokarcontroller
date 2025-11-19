@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { ICONS, AlumasaLogo } from '../constants';
@@ -29,7 +30,7 @@ const navItems: NavItem[] = [
         label: 'Estoque', 
         icon: ICONS.stock, 
         subItems: [
-            { path: '/estoque/atual', label: 'Estoque atual' },
+            { path: '/estoque/atual', label: 'Estoque Atual' },
             { path: '/estoque/inventario', label: 'Inventário' },
         ]
     },
