@@ -218,14 +218,15 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
           const eq = clean(item.equipment).substring(0, 20);
 
           // Standard 100mm x 50mm label (approx 800x400 dots at 203dpi)
+          // UPDATED: Increased font size for Code (A0N,100,100) and adjusted Y positions
           zplOutput += `^XA
 ^PW800
 ^LL400
 ^FO30,30^BQN,2,8^FDQA,${code}^FS
-^FO220,50^A0N,50,50^FD${code}^FS
-^FO220,110^A0N,30,30^FD${desc}^FS
-^FO220,170^A0N,25,25^FDLOC: ${loc}^FS
-^FO220,210^A0N,25,25^FDEQ: ${eq}^FS
+^FO220,35^A0N,100,100^FD${code}^FS
+^FO220,145^A0N,30,30^FD${desc}^FS
+^FO220,190^A0N,25,25^FDLOC: ${loc}^FS
+^FO220,230^A0N,25,25^FDEQ: ${eq}^FS
 ^XZ
 `;
       });
@@ -262,7 +263,8 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
                     }
                     .qr-code { width: 80px; height: 80px; margin-right: 15px; flex-shrink: 0; }
                     .info { flex-grow: 1; overflow: hidden; }
-                    .code { font-size: 22px; font-weight: bold; margin-bottom: 5px; display: block; }
+                    /* Updated font-size for better visibility on shelves */
+                    .code { font-size: 56px; font-weight: 900; margin-bottom: 2px; display: block; line-height: 1; letter-spacing: -1px; }
                     .desc { font-size: 14px; margin-bottom: 5px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
                     .meta { font-size: 12px; color: #333; }
                     @media print {
@@ -550,7 +552,7 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
                                             )}
                                         </div>
                                         <div className="info flex-grow overflow-hidden">
-                                            <span className="code text-2xl font-bold block mb-1">{item.code}</span>
+                                            <span className="code text-5xl font-black block mb-2 leading-none">{item.code}</span>
                                             <span className="desc text-sm block mb-2 leading-tight line-clamp-2 h-9 overflow-hidden">{item.description}</span>
                                             <div className="meta text-xs text-gray-600">
                                                 <span className="mr-3">Loc: {item.location || 'N/A'}</span>
@@ -749,3 +751,4 @@ export const InventoryPage: React.FC<InventoryPageProps> = ({ stockItems, showTo
         </div>
     );
 };
+
