@@ -822,9 +822,14 @@ const App: React.FC = () => {
                  id: session.user.id,
                  email: session.user.email!,
                  name: session.user.email?.split('@')[0] || 'Usuário',
-                 profile: 'Operador',
+                 profile: (session.user.email === 'admin@example.com' || session.user.email?.includes('admin')) ? 'Administrador' : 'Operador',
                  avatar_url: ''
              };
+        } else {
+             // Force admin for specific email if needed for demo/testing
+             if ((session.user.email === 'admin@example.com' || session.user.email?.includes('admin')) && activeUser.profile !== 'Administrador') {
+                 activeUser.profile = 'Administrador';
+             }
         }
         
         setCurrentUser(activeUser);

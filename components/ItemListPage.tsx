@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { StockItem, Supplier, ItemHistory, WAREHOUSE_CATEGORIES, UNIT_OPTIONS, User } from '../types';
+import QRCode from 'qrcode';
 
 interface EstoquePageProps {
   stockItems: StockItem[];
@@ -43,6 +44,11 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
   const [historyItem, setHistoryItem] = useState<StockItem | null>(null);
   const [deleteItem, setDeleteItem] = useState<StockItem | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Label Printing State
+  const [showLabelModal, setShowLabelModal] = useState(false);
+  const [itemsToPrint, setItemsToPrint] = useState<StockItem[]>([]);
+  const [qrCodes, setQrCodes] = useState<Record<string, string>>({});
 
   const ITEMS_PER_PAGE = 10;
 
@@ -138,15 +144,19 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
       const reader = new FileReader();
       reader.onload = async (evt) => {
           const text = evt.target?.result as string;
-          // Simple CSV parser: Code;Description;Category;Unit;MinStock;Value
+          // CSV Format: Code;Description;Category;Unit;MinStock;Value;InitialStock
           const lines = text.split('\n');
           const newItems: any[] = [];
+          let missingInitialStock = false;
           
           for(let i = 1; i < lines.length; i++) {
               const line = lines[i].trim();
               if(!line) continue;
               const cols = line.split(';');
               if(cols.length >= 2) {
+                  const initialStock = cols[6] ? Number(cols[6].replace(',', '.')) : 0;
+                  if (!cols[6]) missingInitialStock = true;
+                  
                   newItems.push({
                       code: cols[0]?.trim(),
                       description: cols[1]?.trim(),
@@ -154,13 +164,17 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
                       unit: cols[3]?.trim() || 'Unidade',
                       min_stock: Number(cols[4]?.replace(',', '.') || 0),
                       value: Number(cols[5]?.replace(',', '.') || 0),
-                      initial_stock: Number(cols[6]?.replace(',', '.') || 0),
+                      initial_stock: initialStock,
                       equipment: '',
                       location: ''
                   });
               }
           }
           
+          if (missingInitialStock) {
+             alert("Aviso: Algumas linhas não continham a coluna 'Estoque Inicial' (7ª coluna). O estoque foi definido como 0.");
+          }
+
           if(newItems.length > 0) {
               await onBulkAddItems(newItems);
           }
@@ -169,6 +183,107 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
       reader.readAsText(file);
   };
   
+  const showImportHelp = () => {
+      alert("Formato do CSV (separado por ponto e vírgula):\n\nCódigo; Descrição; Categoria; Unidade; Estoque Mínimo; Valor; Estoque Inicial\n\nExemplo:\nPAR001; Parafuso Sextavado; Fixadores; Unidade; 50; 0.50; 200");
+  };
+  
+  // Label Generation
+  const generateLabels = async (items: StockItem[]) => {
+      setItemsToPrint(items);
+      const codes: Record<string, string> = {};
+      
+      for (const item of items) {
+          try {
+              // Generate QR Code as Data URL
+              const url = await QRCode.toDataURL(item.code, { width: 100, margin: 1 });
+              codes[item.id] = url;
+          } catch (err) {
+              console.error(err);
+          }
+      }
+      setQrCodes(codes);
+      setShowLabelModal(true);
+  };
+
+  const handleDownloadZPL = () => {
+      let zplOutput = '';
+      
+      itemsToPrint.forEach(item => {
+          // Normalize to remove accents for basic ZPL compatibility and uppercase
+          const clean = (str: string) => str ? str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\x20-\x7E]/g, "").toUpperCase() : "";
+          
+          const code = clean(item.code);
+          const desc = clean(item.description).substring(0, 40);
+          const loc = clean(item.location).substring(0, 20);
+          const eq = clean(item.equipment).substring(0, 20);
+
+          // Standard 100mm x 50mm label (approx 800x400 dots at 203dpi)
+          zplOutput += `^XA
+^PW800
+^LL400
+^FO30,30^BQN,2,8^FDQA,${code}^FS
+^FO220,50^A0N,50,50^FD${code}^FS
+^FO220,110^A0N,30,30^FD${desc}^FS
+^FO220,170^A0N,25,25^FDLOC: ${loc}^FS
+^FO220,210^A0N,25,25^FDEQ: ${eq}^FS
+^XZ
+`;
+      });
+
+      const blob = new Blob([zplOutput], { type: 'text/plain' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'etiquetas.zpl';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+  };
+
+  const handlePrintLabels = () => {
+      const printWindow = window.open('', '', 'height=600,width=800');
+      if (printWindow) {
+          const content = document.getElementById('label-print-area');
+          if (content) {
+              printWindow.document.write('<html><head><title>Imprimir Etiquetas</title>');
+               printWindow.document.write(`
+                <style>
+                    body { margin: 0; padding: 20px; font-family: Arial, sans-serif; }
+                    .label-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+                    .label-card { 
+                        border: 1px solid #000; 
+                        padding: 10px; 
+                        display: flex; 
+                        align-items: center; 
+                        height: 140px; /* Approx label height */
+                        box-sizing: border-box;
+                        page-break-inside: avoid;
+                    }
+                    .qr-code { width: 80px; height: 80px; margin-right: 15px; flex-shrink: 0; }
+                    .info { flex-grow: 1; overflow: hidden; }
+                    .code { font-size: 22px; font-weight: bold; margin-bottom: 5px; display: block; }
+                    .desc { font-size: 14px; margin-bottom: 5px; line-height: 1.2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+                    .meta { font-size: 12px; color: #333; }
+                    @media print {
+                        .label-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+                        .no-print { display: none; }
+                    }
+                </style>
+              `);
+              printWindow.document.write('</head><body>');
+              printWindow.document.write(content.innerHTML);
+              printWindow.document.write('</body></html>');
+              printWindow.document.close();
+              printWindow.focus();
+              setTimeout(() => { 
+                  printWindow.print();
+                  printWindow.close();
+              }, 500);
+          }
+      }
+  };
+
   return (
       <div>
         <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
@@ -186,11 +301,35 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                 </div>
+                
+                {selectedItems.length > 0 && (
+                    <button 
+                        onClick={() => {
+                            const items = stockItems.filter(i => selectedItems.includes(i.id));
+                            generateLabels(items);
+                        }}
+                        className="bg-gray-800 hover:bg-gray-900 text-white font-bold py-2 px-4 rounded-md text-sm flex items-center transition-colors"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                        </svg>
+                        Imprimir Etiquetas ({selectedItems.length})
+                    </button>
+                )}
+
                 <input type="file" ref={fileInputRef} className="hidden" accept=".csv" onChange={handleFileUpload} />
-                <button onClick={() => fileInputRef.current?.click()} className="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-md text-sm flex items-center">
-                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
-                     Importar
-                </button>
+                <div className="flex items-center bg-gray-200 rounded-md">
+                     <button onClick={() => fileInputRef.current?.click()} className="hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-l-md text-sm flex items-center">
+                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                         Importar
+                    </button>
+                    <button onClick={showImportHelp} className="hover:bg-gray-300 text-gray-600 font-bold py-2 px-2 rounded-r-md text-sm border-l border-gray-300" title="Ajuda sobre o formato do CSV">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </button>
+                </div>
+                
                 <button onClick={() => { setEditingItem({}); setIsSlideOverOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-md text-sm flex items-center">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                     Novo Item
@@ -251,6 +390,7 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
                                         <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 ring-1 ring-black ring-opacity-5">
                                             <div className="py-1">
                                                 <button onClick={() => { setEditingItem(item); setIsSlideOverOpen(true); setActiveActionMenu(null); }} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Editar</button>
+                                                <button onClick={() => { generateLabels([item]); setActiveActionMenu(null); }} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Gerar Etiqueta</button>
                                                 <button onClick={() => { setHistoryItem(item); setActiveActionMenu(null); }} className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Histórico</button>
                                                 <button onClick={() => { setDeleteItem(item); setActiveActionMenu(null); }} className="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100">Excluir</button>
                                             </div>
@@ -382,6 +522,62 @@ export const EstoquePage: React.FC<EstoquePageProps> = ({
                             </div>
                         </div>
                     </section>
+                </div>
+            </div>
+        )}
+        
+        {/* Label Printing Modal */}
+        {showLabelModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                <div className="bg-white p-6 rounded-lg shadow-xl max-w-5xl w-full max-h-[90vh] flex flex-col">
+                    <div className="flex justify-between items-center mb-4 border-b pb-3">
+                        <h3 className="text-xl font-bold text-gray-900">Visualização de Etiquetas</h3>
+                        <button onClick={() => setShowLabelModal(false)} className="text-gray-500 hover:text-gray-700">
+                            <span className="text-2xl">&times;</span>
+                        </button>
+                    </div>
+                    
+                    <div className="overflow-y-auto flex-1 bg-gray-100 p-4">
+                        <div id="label-print-area" className="bg-white p-8 shadow-sm mx-auto max-w-[210mm] min-h-[297mm]">
+                           <div className="label-grid grid grid-cols-2 gap-4">
+                                {itemsToPrint.map(item => (
+                                    <div key={item.id} className="label-card border border-black p-4 flex items-center h-36 break-inside-avoid">
+                                        <div className="qr-code mr-4 shrink-0">
+                                            {qrCodes[item.id] ? (
+                                                <img src={qrCodes[item.id]} alt="QR Code" className="w-20 h-20" />
+                                            ) : (
+                                                <div className="w-20 h-20 bg-gray-200 animate-pulse"></div>
+                                            )}
+                                        </div>
+                                        <div className="info flex-grow overflow-hidden">
+                                            <span className="code text-2xl font-bold block mb-1">{item.code}</span>
+                                            <span className="desc text-sm block mb-2 leading-tight line-clamp-2 h-9 overflow-hidden">{item.description}</span>
+                                            <div className="meta text-xs text-gray-600">
+                                                <span className="mr-3">Loc: {item.location || 'N/A'}</span>
+                                                <span>Eq: {item.equipment || 'N/A'}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                           </div>
+                        </div>
+                    </div>
+
+                    <div className="mt-4 flex justify-end space-x-2 pt-3 border-t">
+                        <button onClick={() => setShowLabelModal(false)} className="px-4 py-2 bg-gray-200 rounded-md text-gray-800 hover:bg-gray-300">Fechar</button>
+                        <button onClick={handleDownloadZPL} className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Baixar ZPL
+                        </button>
+                        <button onClick={handlePrintLabels} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                            </svg>
+                            Imprimir
+                        </button>
+                    </div>
                 </div>
             </div>
         )}
